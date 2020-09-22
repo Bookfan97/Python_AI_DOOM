@@ -29,12 +29,12 @@ class CNN(nn.Module):
         self.convolution2 = nn.Conv2d(in_channels=32, out_channels=32, kernel_size=3)
         self.convolution3 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=2)
 
-        #Full Connections
+        # Full Connections
         self.fc1 = nn.Linear(in_features=self.count_neurons((1, 80, 80)), out_features=40)
         self.sc2 = nn.Linear(in_features=40, out_features=number_actions)
 
     def count_neurons(self, image_dim):
-        #Create an image
+        # Create an image
         x = Variable(torch.rand(1, *image_dim))
 
         # Pass image through convolution layers
@@ -42,57 +42,82 @@ class CNN(nn.Module):
         x = F.relu(F.max_pool2d(self.convolution2(x), 3, 2))
         x = F.relu(F.max_pool2d(self.convolution3(x), 3, 2))
 
-        #Pass image through flattening layers
+        # Pass image through flattening layers
         return x.data.view(1, -1).size(1)
 
     def forward(self, x):
-        #Propogating the signals
+        # Propogating the signals
         x = F.relu(F.max_pool2d(self.convolution1(x), 3, 2))
         x = F.relu(F.max_pool2d(self.convolution2(x), 3, 2))
         x = F.relu(F.max_pool2d(self.convolution3(x), 3, 2))
 
-        #Flatten convolution layer
+        # Flatten convolution layer
         x = x.view(x.size(0), -1)
 
-        #Get hidden layer
+        # Get hidden layer
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
 
-        #Return output neurons
+        # Return output neurons
         return x
+
+
 # Body
 class SoftmaxBody(nn.Module):
     def __init__(self, T):
         super(SoftmaxBody, self).__init__()
 
-        #Set temperature
+        # Set temperature
         self.T = T
 
     def forward(self, outputs):
-        #Probabilites per action
+        # Probabilites per action
         probs = F.softmax(outputs * self.T)
 
-        #Final actions to play
+        # Final actions to play
         actions = probs.multinomial()
-#AI
+
+
+# AI
 class AI:
     def __init__(self, brain, body):
-        #CNN class
+        # CNN class
         self.brain = brain
 
-        #SoftmaxBody class
+        # SoftmaxBody class
         self.body = body
 
     def __call__(self, inputs):
-        #Receiving input images
+        # Receiving input images
         input = Variable(torch.from_numpy(np.array(inputs, dtype=np.float32)))
 
-        #Propogate images to the brain
+        # Propogate images to the brain
         output = self.brain(input)
 
-        #Propogate output to body
+        # Propogate output to body
         actions = self.body(output)
 
-        #Return actions
+        # Return actions
         return actions.data.numpy()
+
+
 # Part 2 - Training the AI with Deep Convolutional Q-Learning
+# Get environment
+doom_env = image_preprocessing.PreprocessImage(
+    SkipWrapper(4)(ToDiscrete("minimal")(gym.make("ppaquette/DoomCorrider-v0"))), width=80, height=80, grayscale=True
+)
+doom_env = gym.wrappers.Monitor(doom_env, "videos", force=True)
+
+#Get actions from environment
+number_actions = doom_env.action_space.n
+
+############ AI Instance Start ############
+#Brain
+cnn = CNN(number_actions)
+
+#Body
+softmax_body = SoftmaxBody(T=1.0)
+
+#Instance of AI
+ai = AI(brain=cnn, body=softmax_body)
+############ AI Instance Finish ############
