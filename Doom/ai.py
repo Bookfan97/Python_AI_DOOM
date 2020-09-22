@@ -74,5 +74,25 @@ class SoftmaxBody(nn.Module):
 
         #Final actions to play
         actions = probs.multinomial()
+#AI
+class AI:
+    def __init__(self, brain, body):
+        #CNN class
+        self.brain = brain
 
+        #SoftmaxBody class
+        self.body = body
+
+    def __call__(self, inputs):
+        #Receiving input images
+        input = Variable(torch.from_numpy(np.array(inputs, dtype=np.float32)))
+
+        #Propogate images to the brain
+        output = self.brain(input)
+
+        #Propogate output to body
+        actions = self.body(output)
+
+        #Return actions
+        return actions.data.numpy()
 # Part 2 - Training the AI with Deep Convolutional Q-Learning
