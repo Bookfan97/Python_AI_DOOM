@@ -61,6 +61,18 @@ class CNN(nn.Module):
         #Return output neurons
         return x
 # Body
+class SoftmaxBody(nn.Module):
+    def __init__(self, T):
+        super(SoftmaxBody, self).__init__()
 
+        #Set temperature
+        self.T = T
+
+    def forward(self, outputs):
+        #Probabilites per action
+        probs = F.softmax(outputs * self.T)
+
+        #Final actions to play
+        actions = probs.multinomial()
 
 # Part 2 - Training the AI with Deep Convolutional Q-Learning
