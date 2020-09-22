@@ -108,16 +108,115 @@ doom_env = image_preprocessing.PreprocessImage(
 )
 doom_env = gym.wrappers.Monitor(doom_env, "videos", force=True)
 
-#Get actions from environment
+# Get actions from environment
 number_actions = doom_env.action_space.n
 
 ############ AI Instance Start ############
-#Brain
+# Brain
 cnn = CNN(number_actions)
 
-#Body
+# Body
 softmax_body = SoftmaxBody(T=1.0)
 
-#Instance of AI
+# Instance of AI
 ai = AI(brain=cnn, body=softmax_body)
 ############ AI Instance Finish ############
+
+############ AI Training Start ############
+### Experience Replay ###
+n_steps = experience_replay.NStepProgress(doom_env, ai, n_step=10)
+memory = experience_replay.ReplayMemory(n_steps=n_steps, capacity=10000)
+
+### Eligibility Trace ###
+def eligibility_trace(batch):
+    gamma = 0.99
+    inputs = []
+    targets = []
+    for series in batch:
+        # Get first and last input states
+        input = Variable(torch.from_numpy(np.array(series[0].state, series[-1].state, dtype=np.float32)))
+
+        # Get output signal from brain
+        output = cnn(input)
+
+        # Get reward
+        cumul_reward = 0.0 if series[-1].done else output.data.max()
+
+        # Loop over rewards to get cumulative reward
+        for step in reversed(series[:-1]):
+            cumul_reward = step.reward + gamma * cumul_reward
+
+        #Add first step of series
+        state = series[0].state
+
+        #Add first target from output
+        target = output[0].data
+
+        #Get the reward for the action permformed
+        target[series[0].action] = cumul_reward
+
+        #Update inputs and targets
+        inputs.append(state)
+        targets.append(target)
+
+    #Return updated input and target
+    return torch.from_numpy(np.array(inputs, dtype=np.float32)), torch.stack(targets)
+
+### Make the moving average 100 steps ###
+class MA:
+    #set rewards and size
+    def __int__(self, size):
+        self.list_of_rewards = []
+        self.size = size
+
+    #add cumulative reward
+    def __add__(self, rewards):
+        if isinstance(rewards, list):
+            self.list_of_rewards += rewards
+        else:
+            self.list_of_rewards.append(rewards)
+        while len(self.list_of_rewards) > self.size:
+            del self.list_of_rewards[0]
+
+    #Get average reward
+    def average(self):
+        return np.mean(self.list_of_rewards)
+
+#Get average of 100 steps
+ma = MA(100)
+
+### Train the AI ###
+#Mean score error
+loss = nn.MSELoss()
+optimizer = optim.Adam(cnn.parameters(), lr=0.001)
+nb_epochs = 100
+
+#loop over num epochs
+for epoch in range(1, nb_epochs + 1):
+
+    # Steps per epoch
+    memory.run_steps(200)
+
+    # loop over batches of transisitions from epochs
+    for batch in memory.sample_batch(128):
+
+        #Get inputs and targets
+        inputs, targets = eligibility_trace(batch)
+        inputs, targets = Variable(inputs), Variable(targets)
+
+        #Get predictions and calculate weights
+        predictions = cnn(inputs)
+        loss_error = loss(predictions, targets)
+        optimizer.zero_grad()
+        loss_error.backward()
+        optimizer.step()
+
+    #Compute cumulative rewards
+    rewards_steps = n_steps.rewards_steps()
+    ma.add(rewards_steps)
+    avg_reward = ma.average()
+
+    #Output results
+    print("Epoch: %s, Average Rewards: %s" % (str(epoch), str(avg_reward)))
+
+############ AI Training Finish ############
